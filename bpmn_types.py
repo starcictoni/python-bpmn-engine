@@ -1,6 +1,6 @@
-import requests
 import os
 import env
+import requests
 from utils.common import parse_expression
 
 NS = {
@@ -112,7 +112,7 @@ class UserTask(Task):
 
             for p in f.findall(".//camunda:property", NS):
                 form_field_properties_dict[p.attrib["id"]] = parse_expression(
-                    p.attrib["value"], env.SYSTEM_VARS | env.DS
+                    p.attrib["value"], {**env.SYSTEM_VARS , **env.DS}
                 )
 
             for v in f.findall(".//camunda:constraint", NS):
