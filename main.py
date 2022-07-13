@@ -146,53 +146,108 @@ class ProcessVersion:
         pass
 
     async def add_process_version(self, request):
-        if request.can_read_body == False:
-            return web.json_response(status=400, data={})
-        payload = await request.json()
-        if not payload:
-            return web.json_response(status=400, data={})
-        try: 
+        try:
+            payload = await request.json()
             response = db_connector.add_process_version(payload)
+            if not response:
+                raise aiohttp.web.HTTPServerError()
             data = json.dumps(response, sort_keys=True, default=str)
-        except Exception as error:
-            traceback.print_stack(error)
+        except json.decoder.JSONDecodeError:
             return web.json_response(status=400, data={})
+        except aiohttp.web.HTTPBadRequest as err:
+            traceback.print_stack(err)
+            return web.json_response(status=400, data={})
+        except aiohttp.web.HTTPServerError as err:
+            traceback.print_stack(err)
+            return web.json_response(status=500, data={})
         else:
             return web.json_response(status=201, data=data)
 
     def get_process_versions(self, request):
-        process_definition_id = request.match_info.get('id')
-        if utils.is_valid_type_id(process_definition_id) == False:
-            return web.json_response(status=400, data={})
         try:
+            process_definition_id = request.rel_url.query['process_definition_id']
+            if not process_definition_id or (not utils.is_valid_type_id(process_definition_id)):
+                raise aiohttp.web.HTTPBadRequest()
             response = db_connector.get_process_versions(process_definition_id)
+            if not response:
+                raise aiohttp.web.HTTPServerError()
             data = json.dumps(response, sort_keys=True, default=str)
-        except Exception as error:
-            traceback.print_stack(error)
+        except aiohttp.web.HTTPBadRequest as err:
+            traceback.print_stack(err)
             return web.json_response(status=400, data={})
+        except aiohttp.web.HTTPServerError as err:
+            traceback.print_stack(err)
+            return web.json_response(status=500, data={})
         else:
-            return web.json_response(status=201, data=data)
+            return web.json_response(status=200, data=data)
 
+    async def activate_process_version(self, request):
+        try:
+            payload = await request.json()
+            process_definition_id = payload.get('process_definition_id')
+            process_version_id = payload.get('process_version_id')
+            if not process_definition_id or (not utils.is_valid_type_id(process_definition_id)) or (
+                not utils.is_valid_optional_id(process_version_id)):
+                raise aiohttp.web.HTTPBadRequest()
+            response = db_connector.activate_process_version(process_definition_id, process_version_id)
+            if not response:
+                raise aiohttp.web.HTTPServerError()
+            data = json.dumps(response, sort_keys=True, default=str)
+        except json.decoder.JSONDecodeError:
+            return web.json_response(status=400, data={})
+        except aiohttp.web.HTTPBadRequest as err:
+            traceback.print_stack(err)
+            return web.json_response(status=400, data={})
+        except aiohttp.web.HTTPServerError as err:
+            traceback.print_stack(err)
+            return web.json_response(status=500, data={})
+        else:
+            return web.json_response(status=200, data=data)
 
-#28258925-a73d-4c55-a7fb-b1a57d186662
+    async def deactivate_process_version(self, request):
+        try:
+            payload = await request.json()
+            process_definition_id = payload.get('process_definition_id')
+            process_version_id = payload.get('process_version_id')
+            if not process_definition_id or (not utils.is_valid_type_id(process_definition_id)) or (
+                not utils.is_valid_optional_id(process_version_id)):
+                raise aiohttp.web.HTTPBadRequest()
+            response = db_connector.deactivate_process_version(process_definition_id, process_version_id)
+            if not response:
+                raise aiohttp.web.HTTPServerError()
+            data = json.dumps(response, sort_keys=True, default=str)
+        except json.decoder.JSONDecodeError:
+            return web.json_response(status=400, data={})
+        except aiohttp.web.HTTPBadRequest as err:
+            traceback.print_stack(err)
+            return web.json_response(status=400, data={})
+        except aiohttp.web.HTTPServerError as err:
+            traceback.print_stack(err)
+            return web.json_response(status=500, data={})
+        else:
+            return web.json_response(status=200, data=data)
+
 if __name__ == '__main__':
     logging.basicConfig(level=logging.DEBUG)
     app = web.Application()
 
     process_definition = ProcessDefinition()
     process_version = ProcessVersion()
-    #TODO: remove path vars, add params
+    
     app.add_routes(
         [
+            #TODO: remove path vars, add params
             web.get('/process-definition', process_definition.get_process_definitions),
             web.get('/process-definition/id/{id}', process_definition.get_process_definition_by_id),
             web.get('/process-definition/key/{key}', process_definition.get_process_definition_by_key),
             web.post('/process-definition', process_definition.add_process_definition),
             web.patch('/process-definition/activate', process_definition.activate_process_definition),
             web.patch('/process-definition/deactivate', process_definition.deactivate_process_definition),
-
-            web.get('/process-version/{id}', process_version.get_process_versions),
-            web.post('/process-version', process_version.add_process_version)
+            
+            web.get('/process-version', process_version.get_process_versions),
+            web.post('/process-version', process_version.add_process_version),
+            web.patch('/process-version/activate', process_version.activate_process_version),
+            web.patch('/process-version/deactivate', process_version.deactivate_process_version)
         ]
     )
     cors = aiohttp_cors.setup(

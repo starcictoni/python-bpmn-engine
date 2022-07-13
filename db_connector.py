@@ -216,17 +216,60 @@ def get_process_versions(id):
     return transformed_process_versions
 
 @db_session(sql_debug=True)
-def activate_process_version():
-    #Get the process, update it
-    #Get the other version, update it, if needed
-    #Activate this one
-    pass
+def activate_process_version(process_id, version_id):
+    process_definition = Process_Definition.get_for_update(lambda pd: pd.process_definition_id == process_id)
+    if not process_definition:
+        return None
+
+    process_versions_ids = process_definition.versions
+    for process_version_id in process_versions_ids:
+        version = Process_Version.get_for_update(lambda pv: pv.process_version_id == process_version_id)
+        if version.process_version_id != version_id and version.is_active == True:
+            version.is_active = False
+            version.last_modified_date = datetime.now()
+        elif version.process_version_id == version_id:
+            process_definition.is_active = True
+            process_definition.active_version_id = version.process_version_id
+            process_definition.active_version_name = version.process_version_name
+            process_definition.active_version_number = version.process_version_number
+            process_definition.last_modified_date = datetime.now()
+            version.is_active = True
+            version.last_modified_date = datetime.now()
+            process_version = version
+
+    return {
+        "process_definition": process_definition.to_dict(),
+        "process_version": process_version.to_dict()
+    }
 
 @db_session(sql_debug=True)
-def deactivate_process_version():
-    #Get the process, update it
-    #Deactivate the version
-    pass
+def deactivate_process_version(process_id, version_id):
+    process_definition = Process_Definition.get_for_update(lambda pd: pd.process_definition_id == process_id)
+    if not process_definition:
+        return None
+    process_version = Process_Version.get_for_update(lambda pv: pv.process_version_id == version_id)
+    if not process_version:
+        return None
+
+    process_definition.is_active = False
+    process_definition.active_version_id = None
+    process_definition.active_version_name = None
+    process_definition.active_version_number = None
+    process_definition.last_modified_date = datetime.now()
+    process_version.is_active = False
+    process_version.last_modified_date = datetime.now()
+
+    # process_versions_ids = process_definition.versions
+    # for process_version_id in process_versions_ids:
+    #     process_version = Process_Version.get_for_update(lambda pv: pv.process_version_id == process_version_id)
+    #     if process_version.is_active == True and not (process_version.process_version_id == version_id):
+    #         process_version.is_active = False
+    #         process_version.last_modified_date = datetime.now()
+            
+    return {
+        "process_definition": process_definition.to_dict(),
+        "process_version": process_version.to_dict()
+    }    
 
 @db_session(sql_debug=True)
 def delete_process_version():
