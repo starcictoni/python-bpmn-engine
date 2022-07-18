@@ -55,10 +55,17 @@ class Process_Definition(DB.Entity):
     process_version = Set(lambda: Process_Version)
 
 @db_session(sql_debug=True)
-def delete_process_definition():
-    pass
+def delete_process_definition(process_id):
+    definition = Process_Definition.get(lambda pd: pd.process_definition_id == process_id)
+    versions_ids = definition.versions
+    for version_id in versions_ids:
+        process_version = Process_Version.get(lambda pv: pv.process_version_id == version_id)
+        process_version.delete()
+    definition.delete()
+    return {
+        "process_definition": process_id
+    }
 
-#Versions must be shown on the activation dialog
 @db_session(sql_debug=True)
 def activate_process_definition(process_id, version_id):
     process_definition = Process_Definition.get_for_update(lambda pd: pd.process_definition_id == process_id)
@@ -114,13 +121,8 @@ def get_process_definitions():
     return transformed_process_definitions
 
 @db_session(sql_debug=True)
-def get_process_definition_by_id(id):
+def get_process_definition(id):
     process_definition = Process_Definition.get(lambda pd: pd.process_definition_id == id)
-    return {} if process_definition is None else process_definition.to_dict()
-
-@db_session(sql_debug=True)
-def get_process_definition_by_key(key):
-    process_definition = Process_Definition.get(lambda pd: pd.process_definition_key == key)
     return {} if process_definition is None else process_definition.to_dict()
 
 @db_session(sql_debug=True)
@@ -162,6 +164,16 @@ def add_process_definition(payload):
         process_definition.process_version = process_version
 
     return process_definition.to_dict()
+
+@db_session(sql_debug=True)
+def change_process_definition_info(definition_id, definition_name, definition_filename):
+    definition = Process_Definition.get_for_update(lambda pd: pd.process_definition_id == definition_id)
+    definition.process_definition_name = definition_name
+    definition.file_name = definition_filename
+    definition.last_modified_date = datetime.now()
+    
+    return definition.to_dict()
+
 
 class Process_Version(DB.Entity):
     process_version_id = PrimaryKey(int, auto=True)
@@ -222,6 +234,7 @@ def activate_process_version(process_id, version_id):
         return None
 
     process_versions_ids = process_definition.versions
+    process_versions = []
     for process_version_id in process_versions_ids:
         version = Process_Version.get_for_update(lambda pv: pv.process_version_id == process_version_id)
         if version.process_version_id != version_id and version.is_active == True:
@@ -235,11 +248,11 @@ def activate_process_version(process_id, version_id):
             process_definition.last_modified_date = datetime.now()
             version.is_active = True
             version.last_modified_date = datetime.now()
-            process_version = version
+        process_versions.append(version.to_dict())
 
     return {
         "process_definition": process_definition.to_dict(),
-        "process_version": process_version.to_dict()
+        "process_version": process_versions
     }
 
 @db_session(sql_debug=True)
@@ -259,23 +272,69 @@ def deactivate_process_version(process_id, version_id):
     process_version.is_active = False
     process_version.last_modified_date = datetime.now()
 
-    # process_versions_ids = process_definition.versions
-    # for process_version_id in process_versions_ids:
-    #     process_version = Process_Version.get_for_update(lambda pv: pv.process_version_id == process_version_id)
-    #     if process_version.is_active == True and not (process_version.process_version_id == version_id):
-    #         process_version.is_active = False
-    #         process_version.last_modified_date = datetime.now()
-            
     return {
         "process_definition": process_definition.to_dict(),
         "process_version": process_version.to_dict()
     }    
 
 @db_session(sql_debug=True)
-def delete_process_version():
-    #RULES: cannot delete if the version is the only one left
-    #Check if the version is active in some process, if it is deactivate the process - frontend needs to know
-    pass
+def change_process_version_info(version_id, version_name, version_filename):
+    version = Process_Version.get_for_update(lambda pv: pv.process_version_id == version_id)
+    definition = None
+    if version.is_active == True:
+        definition_id = version.process_definition_id.process_definition_id
+        definition = Process_Definition.get_for_update(lambda pd: pd.process_definition_id == definition_id)
+        definition.active_version_name = version_name
+        definition.last_modified_date = datetime.now()
+        definition = definition.to_dict()
+
+    version.process_version_name = version_name
+    version.file_name = version_filename
+    version.last_modified_date = datetime.now()
+    
+    return {
+        "process_definition": definition,
+        "process_version": version.to_dict()
+    }
+
+@db_session(sql_debug=True)
+def get_process_version(version_id):
+    version = Process_Version.get(lambda pv: pv.process_version_id == version_id)
+    return {} if version is None else version.to_dict()
+
+@db_session(sql_debug=True)
+def delete_process_version(version_id):
+    version = Process_Version.get(lambda pv: pv.process_version_id == version_id)
+    definition = Process_Definition.get(lambda pd: pd.process_definition_id == version.process_definition_id.process_definition_id)
+    definition_id = definition.process_definition_id
+    #refactor
+    if definition.number_of_versions == 1:
+        version.delete()
+        definition.delete()
+        return {
+            "process_definition": definition_id,
+            "process_version": version_id
+        }
+    elif version.is_active:
+        definition.is_active = False
+        definition.number_of_versions -= 1
+        definition.versions.remove(version_id)
+        definition.active_version_id = None
+        definition.active_version_name = None
+        definition.active_version_number = None
+        definition.last_modified_date = datetime.now()
+        version.delete()
+        return {
+            "process_definition": definition.to_dict(),
+            "process_version": version_id
+        }
+    else:
+        version.delete()
+    
+    return {
+        "process_definition": None,
+        "process_version": version_id
+    }
 
 class Process_Instance(DB.Entity):
     process_instance_id = PrimaryKey(int, auto=True)
