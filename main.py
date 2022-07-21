@@ -17,6 +17,11 @@ import xml.dom.minidom
 
 db_connector.setup_db()
 
+# else:
+#     raise aiohttp.HttpProcessingError(
+#         code=resp.status, message=resp.reason,
+#         headers=resp.headers)
+
 class ProcessDefinition:
     def __init__(self):
         pass
@@ -24,10 +29,15 @@ class ProcessDefinition:
     def get_process_definitions(self, request):
         try: 
             response = db_connector.get_process_definitions()
+            if not response:
+                raise aiohttp.web.HTTPServerError()
             data = json.dumps(response, sort_keys=True, default=str)
-        except Exception as error:
-            traceback.print_stack(error)
-            return web.json_response(status=400, data=[])
+        except aiohttp.web.HTTPBadRequest as err:
+            traceback.print_stack(err)
+            return web.json_response(status=400, data={})
+        except aiohttp.web.HTTPServerError as err:
+            traceback.print_stack(err)
+            return web.json_response(status=500, data={})
         else:
             return web.json_response(status=200, data=data)
 
@@ -48,22 +58,28 @@ class ProcessDefinition:
             return web.json_response(status=500, data={})
         else:
             return web.json_response(status=200, data=data)
-        
+    
     async def add_process_definition(self, request):
-        if request.can_read_body == False:
-            return web.json_response(status=400, data={})
-        payload = await request.json()
-        if not payload:
-            return web.json_response(status=400, data={})
-        try: 
+        try:
+            payload = await request.json()
+            if not payload:
+                raise aiohttp.web.HTTPBadRequest()
             response = db_connector.add_process_definition(payload)
+            if not response:
+                raise aiohttp.web.HTTPServerError()
             data = json.dumps(response, sort_keys=True, default=str)
-        except Exception as error:
-            traceback.print_stack(error)
+        except json.decoder.JSONDecodeError:
             return web.json_response(status=400, data={})
+        except aiohttp.web.HTTPBadRequest as err:
+            traceback.print_stack(err)
+            return web.json_response(status=400, data={})
+        except aiohttp.web.HTTPServerError as err:
+            traceback.print_stack(err)
+            return web.json_response(status=500, data={})
         else:
             return web.json_response(status=201, data=data)
 
+    #TODO - REDO
     async def activate_process_definition(self, request):
         try:
             payload = await request.json()
@@ -87,7 +103,7 @@ class ProcessDefinition:
             return web.json_response(status=500, data={})
         else:
             return web.json_response(status=200, data=data)
-
+    #TODO - REDO
     async def deactivate_process_definition(self, request):
         try:
             payload = await request.json()
@@ -108,7 +124,7 @@ class ProcessDefinition:
             return web.json_response(status=500, data={})
         else:
             return web.json_response(status=200, data=data)
-
+    #TODO - REDO
     async def change_process_definition_info(self, request):
         try:
             payload = await request.json()
@@ -301,16 +317,187 @@ class ProcessVersion:
         else:
             return web.json_response(status=200, data=data)
 
+class WebService:
+    def __init__(self):
+        pass
+
+    async def get_service(self, request):
+        try:
+            service_id = request.match_info.get('id')
+            if not service_id or (not utils.is_valid_type_id(service_id)):
+                raise aiohttp.web.HTTPBadRequest()
+            response = db_connector.get_service(service_id)
+            if not response:
+                raise aiohttp.web.HTTPServerError()
+            health = await WebService().get_service_status(response)
+            combined = utils.add_status_to_response(response, health)
+            data = json.dumps(combined, sort_keys=True, default=str)
+        except aiohttp.web.HTTPBadRequest as err:
+            traceback.print_stack(err)
+            return web.json_response(status=400, data={})
+        except aiohttp.web.HTTPServerError as err:
+            traceback.print_stack(err)
+            return web.json_response(status=500, data={})
+        else:
+            return web.json_response(status=200, data=data)
+
+    async def delete_service(self, request):
+        try:
+            payload = await request.json()
+            service_id = payload.get('id')
+            if not service_id or (not utils.is_valid_type_id(service_id)):
+                raise aiohttp.web.HTTPBadRequest()
+            response = db_connector.delete_service(service_id)
+            if not response:
+                raise aiohttp.web.HTTPServerError()
+            data = json.dumps(response, sort_keys=True, default=str)
+        except json.decoder.JSONDecodeError:
+            return web.json_response(status=400, data={})
+        except aiohttp.web.HTTPBadRequest as err:
+            traceback.print_stack(err)
+            return web.json_response(status=400, data={})
+        except aiohttp.web.HTTPServerError as err:
+            traceback.print_stack(err)
+            return web.json_response(status=500, data={})
+        else:
+            return web.json_response(status=200, data=data)
+
+    async def add_service(self, request):
+        try:
+            payload = await request.json()
+            response = db_connector.add_service(payload)
+            if not response:
+                raise aiohttp.web.HTTPServerError()
+            health = await WebService().get_service_status(response)
+            combined = utils.add_status_to_response(response, health)
+            data = json.dumps(combined, sort_keys=True, default=str)
+        except json.decoder.JSONDecodeError:
+            return web.json_response(status=400, data={})
+        except aiohttp.web.HTTPBadRequest as err:
+            traceback.print_stack(err)
+            return web.json_response(status=400, data={})
+        except aiohttp.web.HTTPServerError as err:
+            traceback.print_stack(err)
+            return web.json_response(status=500, data={})
+        else:
+            return web.json_response(status=200, data=data)
+
+    async def update_service(self, request):
+        try:
+            payload = await request.json()
+            service_id = payload.get('id')
+            if not service_id or (not utils.is_valid_type_id(service_id)):
+                raise aiohttp.web.HTTPBadRequest()
+            response = db_connector.update_service(payload)
+            if not response:
+                raise aiohttp.web.HTTPServerError()
+            health = await WebService().get_service_status(response)
+            combined = utils.add_status_to_response(response, health)
+            data = json.dumps(combined, sort_keys=True, default=str)
+        except json.decoder.JSONDecodeError:
+            return web.json_response(status=400, data={})
+        except aiohttp.web.HTTPBadRequest as err:
+            traceback.print_stack(err)
+            return web.json_response(status=400, data={})
+        except aiohttp.web.HTTPServerError as err:
+            traceback.print_stack(err)
+            return web.json_response(status=500, data={})
+        else:
+            return web.json_response(status=200, data=data)
+
+    async def change_status(self, request):
+        try:
+            service_id = request.match_info.get('id')
+            if not service_id or (not utils.is_valid_type_id(service_id)):
+                raise aiohttp.web.HTTPBadRequest()
+            response = db_connector.change_status(service_id)
+            if not response:
+                raise aiohttp.web.HTTPServerError()
+            health = await WebService().get_service_status(response)
+            combined = utils.add_status_to_response(response, health)
+            data = json.dumps(combined, sort_keys=True, default=str)
+        except aiohttp.web.HTTPBadRequest as err:
+            traceback.print_stack(err)
+            return web.json_response(status=400, data={})
+        except aiohttp.web.HTTPServerError as err:
+            traceback.print_stack(err)
+            return web.json_response(status=500, data={})
+        else:
+            return web.json_response(status=200, data=data)
+
+    async def get_services(self, request):
+        try:
+            response = db_connector.get_services()
+            if not response:
+                raise aiohttp.web.HTTPServerError()
+            health = await WebService().get_service_status(response)
+            combined = utils.add_status_to_response(response, health)
+            data = json.dumps(combined, sort_keys=True, default=str)
+        except aiohttp.web.HTTPBadRequest as err:
+            traceback.print_stack(err)
+            return web.json_response(status=400, data={})
+        except aiohttp.web.HTTPServerError as err:
+            traceback.print_stack(err)
+            return web.json_response(status=500, data={})
+        else:
+            return web.json_response(status=200, data=data)
+
+    async def fetch(self, session, address):
+        try:
+            async with session.get(address + '/status') as response:
+                status = True if response.status == 200 else False
+        except aiohttp.ClientConnectionError as err:
+            status = False
+        except aiohttp.InvalidURL as err:
+            status = False
+        return status
+
+    async def get_service_status(self, services):
+        ids = []
+        statuses = []
+        resolved_statuses = []
+        web_service = WebService()
+        async with aiohttp.ClientSession() as session:
+            if isinstance(services, dict):
+                service = services
+                ids.append(service.get('id'))
+                address = service.get('address')
+                statuses.append(web_service.fetch(session, address))
+            elif isinstance(services, list):
+                for service in services:
+                    ids.append(service.get('id'))
+                    address = service.get('address')
+                    statuses.append(web_service.fetch(session, address))
+            resolved_statuses = await asyncio.gather(*statuses, return_exceptions=True)
+        return dict(zip(ids, resolved_statuses))
+            
+# @routes.get("/service/status")
+# async def get_service_status(request):
+#     services = db_connector.get_services()
+#     services_hp, service_names = [], []
+#     async with aiohttp.ClientSession() as session:
+#         for service in services:
+#             service_names.append(service.name)
+#             services_hp.append(fetch(session, service.url))
+#         service_statuses = await asyncio.gather(*services_hp, return_exceptions=True)
+#         print(service_statuses)
+#     return aiohttp.web.json_response(dict(zip(service_names, service_statuses)))
+
+
+
+    def get_service_meta(self, request):
+        pass
+
+
+
 if __name__ == '__main__':
     logging.basicConfig(level=logging.DEBUG)
     app = web.Application()
-
     process_definition = ProcessDefinition()
     process_version = ProcessVersion()
-    
+    web_service = WebService()
     app.add_routes(
         [
-            #TODO: remove path vars, add params
             web.get('/process-definition', process_definition.get_process_definitions),
             web.get('/process-definition/{id}', process_definition.get_process_definition),
             web.post('/process-definition', process_definition.add_process_definition),
@@ -325,6 +512,14 @@ if __name__ == '__main__':
             web.patch('/process-version/inactive', process_version.deactivate_process_version),
             web.patch('/process-version/info', process_version.change_process_version_info),
             web.delete('/process-version', process_version.delete_process_version),
+            web.get('/web-service', web_service.get_services),
+            web.get('/web-service/{id}', web_service.get_service),
+            web.post('/web-service', web_service.add_service),
+            web.delete('/web-service', web_service.delete_service),
+            web.patch('/web-service', web_service.update_service),
+            web.patch('/web-service/{id}', web_service.change_status),
+            web.get('/web-service/meta', web_service.get_service_meta),
+            web.get('/web-service/status', web_service.get_service_status),
         ]
     )
     cors = aiohttp_cors.setup(

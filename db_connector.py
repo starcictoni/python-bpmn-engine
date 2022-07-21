@@ -1,9 +1,11 @@
 
 from concurrent.futures import process
 from ensurepip import version
+from enum import auto
 from multiprocessing.dummy import Process
 from optparse import Option
 from tkinter.tix import INTEGER
+from aiohttp import payload
 from pony.orm import *
 from datetime import datetime
 from uuid import uuid4
@@ -33,10 +35,6 @@ class RunningInstance(DB.Entity):
     running = Required(bool)
     instance_id = Required(str, unique=True)
 
-class Services(DB.Entity):
-    name = Required(str)
-    type = Required(str) #connector?
-    url = Required(str)
 
 class Process_Definition(DB.Entity):
     process_definition_id = PrimaryKey(int, auto=True)
@@ -116,7 +114,7 @@ def deactivate_process_definition(id):
 def get_process_definitions():
     process_definitions = select(pd for pd in Process_Definition)[:].to_list()
     if not process_definitions:
-        return {}
+        return []
     transformed_process_definitions = [process.to_dict() for process in process_definitions]
     return transformed_process_definitions
 
@@ -129,7 +127,7 @@ def get_process_definition(id):
 def add_process_definition(payload):
     process_definition = Process_Definition(
         process_definition_key = str(uuid4()),
-        process_definition_name = payload.get('process_name'),
+        process_definition_name = payload.get('process_definition_name'),
         file_name = payload.get('file_name'),
         created = datetime.now(),
         last_modified_date = datetime.now(),
@@ -145,7 +143,7 @@ def add_process_definition(payload):
 
     process_version = Process_Version(
         process_version_key = str(uuid4()),
-        process_version_name = payload.get('process_name') + ' v1',
+        process_version_name = payload.get('process_definition_name') + ' v1',
         process_version_number = 1,
         file_name = payload.get('file_name'),
         created = process_definition.created,
@@ -173,7 +171,6 @@ def change_process_definition_info(definition_id, definition_name, definition_fi
     definition.last_modified_date = datetime.now()
     
     return definition.to_dict()
-
 
 class Process_Version(DB.Entity):
     process_version_id = PrimaryKey(int, auto=True)
@@ -336,53 +333,90 @@ def delete_process_version(version_id):
         "process_version": version_id
     }
 
+
 class Process_Instance(DB.Entity):
-    process_instance_id = PrimaryKey(int, auto=True)
-    process_instance_key = Required(str)
+    id = PrimaryKey(int, auto=True)
+    key = Required(str)
+    status = Required(str) #CHECK CONSTRAINT (FINISHED, ERROR, STARTED, SUSPENDED)
     created = Required(datetime, precision=6)
     last_modified_date = Required(datetime, precision=6)
-    process_instance_status = Required(str) #CHECK CONSTRAINT (FINISHED, ERROR, STARTED, SUSPENDED)
     task_ids = Optional(IntArray, nullable=True)
-    process_instance_variables = Optional(Json, nullable=True)
+    instance_variables = Optional(Json, nullable=True)
     process_version_id = Required(Process_Version) #FK
 
 class Task(DB.Entity):
-    task_id = PrimaryKey(int, auto=True)
-    task_name = Required(str)
-    task_type = Required(str)
+    id = PrimaryKey(int, auto=True)
+    name = Required(str)
+    type = Required(str)
+    variables = Optional(Json, nullable=True)
     created = Required(datetime, precision=6)
     last_modified_date = Required(datetime, precision=6)
-    task_variables = Optional(Json, nullable=True)
-    process_instance_id = Required(int) #FK
+    instance_id = Required(int) #FK
 
 
+class Web_Service(DB.Entity):
+    id = PrimaryKey(int, auto=True)
+    name = Required(str)
+    address = Required(str)
+    is_active = Required(bool)
+    created = Required(datetime, precision=6)
+    last_modified_date = Required(datetime, precision=6)
 
-
-
+@db_session
+def get_service(id):
+    service = Web_Service.get(lambda s: s.id == id)
+    if not service:
+        return {}
+    return service.to_dict()
 
 @db_session
 def get_services():
-    services = select(s for s in Services)[:]
-    services_list = list(services)
-    return services_list
+    services = select(service for service in Web_Service)[:]
+    if not services:
+        return []
+    services = [service.to_dict() for service in services]
+    return services
 
 @db_session
-def add_services(name, type, url):
-    Services(name=name, type=type, url=url)
-    return f'Service with the {name} name was saved.'
+def delete_service(id):
+    service = Web_Service.get(lambda s: s.id == id)
+    if not service:
+        return {}
+    service.delete()
+    return { "id": id}
 
 @db_session
-def update_services(id, name, type, url):
-    service_to_update = Services[id]
-    service_name = service_to_update.name
-    service_to_update.set(name=name, type=type, url=url)
-    return f'Service with the {service_name} name was updated.'
+def add_service(data):
+    service = Web_Service(
+        name = data.get('name'),
+        address = data.get('address'),
+        is_active = data.get('is_active'),
+        created = datetime.now(),
+        last_modified_date = datetime.now()
+    )
+    service.flush()
+    return service.to_dict()
 
 @db_session
-def delete_services(id, name):
-    service_to_delete = Services[id] 
-    service_to_delete.delete()
-    return f'Service with the {name} name was deleted.'
+def change_status(id):
+    service = Web_Service.get_for_update(lambda s: s.id == id)
+    if not service:
+        return {}
+    service.is_active = not service.is_active
+    return service.to_dict()
+
+@db_session
+def update_service(data):
+    service = Web_Service.get_for_update(lambda s: s.id == data.get('id'))
+    if not service:
+        return {}
+    service.name = data.get('name')
+    service.address = data.get('address')
+    service.last_modified_date = datetime.now()
+    return service.to_dict()
+
+
+
 
 @db_session
 def add_event(model_name, instance_id, activity_id, timestamp, pending, activity_variables):
