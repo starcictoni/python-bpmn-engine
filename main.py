@@ -22,6 +22,8 @@ db_connector.setup_db()
 #         code=resp.status, message=resp.reason,
 #         headers=resp.headers)
 
+#1. Need to check if payload empty
+
 class ProcessDefinition:
     def __init__(self):
         pass
@@ -79,7 +81,6 @@ class ProcessDefinition:
         else:
             return web.json_response(status=201, data=data)
 
-    #TODO - REDO
     async def activate_process_definition(self, request):
         try:
             payload = await request.json()
@@ -103,7 +104,7 @@ class ProcessDefinition:
             return web.json_response(status=500, data={})
         else:
             return web.json_response(status=200, data=data)
-    #TODO - REDO
+
     async def deactivate_process_definition(self, request):
         try:
             payload = await request.json()
@@ -124,7 +125,7 @@ class ProcessDefinition:
             return web.json_response(status=500, data={})
         else:
             return web.json_response(status=200, data=data)
-    #TODO - REDO
+
     async def change_process_definition_info(self, request):
         try:
             payload = await request.json()

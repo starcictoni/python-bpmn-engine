@@ -158,8 +158,8 @@ def add_process_definition(payload):
         process_definition.active_version_id = process_version.process_version_id
         process_definition.active_version_name = process_version.process_version_name
         process_definition.active_version_number = process_version.process_version_number
-        process_definition.versions = [process_version.process_version_id]
         process_definition.process_version = process_version
+    process_definition.versions = [process_version.process_version_id]
 
     return process_definition.to_dict()
 
@@ -304,7 +304,6 @@ def delete_process_version(version_id):
     version = Process_Version.get(lambda pv: pv.process_version_id == version_id)
     definition = Process_Definition.get(lambda pd: pd.process_definition_id == version.process_definition_id.process_definition_id)
     definition_id = definition.process_definition_id
-    #refactor
     if definition.number_of_versions == 1:
         version.delete()
         definition.delete()
@@ -326,6 +325,9 @@ def delete_process_version(version_id):
             "process_version": version_id
         }
     else:
+        definition.number_of_versions -= 1
+        definition.versions.remove(version_id)
+        definition.last_modified_date = datetime.now()
         version.delete()
     
     return {
@@ -352,7 +354,6 @@ class Task(DB.Entity):
     created = Required(datetime, precision=6)
     last_modified_date = Required(datetime, precision=6)
     instance_id = Required(int) #FK
-
 
 class Web_Service(DB.Entity):
     id = PrimaryKey(int, auto=True)
