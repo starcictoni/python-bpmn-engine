@@ -1,5 +1,6 @@
 
 from http.client import HTTPException
+from symbol import parameters
 from aiohttp import web
 from uuid import uuid4, UUID
 from datetime import datetime
@@ -13,16 +14,11 @@ import db_connector
 import logging
 import traceback
 import aiohttp_cors
-import xml.dom.minidom
+from functools import reduce
+from bpmn_model import BpmnModel, UserFormMessage, get_model_for_instance
 
 db_connector.setup_db()
 
-# else:
-#     raise aiohttp.HttpProcessingError(
-#         code=resp.status, message=resp.reason,
-#         headers=resp.headers)
-
-#1. Need to check if payload empty
 
 class ProcessDefinition:
     def __init__(self):
@@ -32,14 +28,14 @@ class ProcessDefinition:
         try: 
             response = db_connector.get_process_definitions()
             if not response:
-                raise aiohttp.web.HTTPServerError()
+                return web.json_response(status=400, data=[])
             data = json.dumps(response, sort_keys=True, default=str)
         except aiohttp.web.HTTPBadRequest as err:
             traceback.print_stack(err)
-            return web.json_response(status=400, data={})
+            return web.json_response(status=400, data=[])
         except aiohttp.web.HTTPServerError as err:
             traceback.print_stack(err)
-            return web.json_response(status=500, data={})
+            return web.json_response(status=500, data=[])
         else:
             return web.json_response(status=200, data=data)
 
@@ -50,7 +46,7 @@ class ProcessDefinition:
                 raise aiohttp.web.HTTPBadRequest()
             response = db_connector.get_process_definition(definition_id)
             if not response:
-                raise aiohttp.web.HTTPServerError()
+                return web.json_response(status=400, data={})
             data = json.dumps(response, sort_keys=True, default=str)
         except aiohttp.web.HTTPBadRequest as err:
             traceback.print_stack(err)
@@ -84,13 +80,12 @@ class ProcessDefinition:
     async def activate_process_definition(self, request):
         try:
             payload = await request.json()
-            process_definition_id = payload.get('process_definition_id')
-            process_version_id = payload.get('process_version_id')
-            if not process_definition_id or (not utils.is_valid_type_id(process_definition_id)) or (
-                not utils.is_valid_optional_id(process_version_id)):
+            definition_id = payload.get('definition_id')
+            version_id = payload.get('version_id')
+            if not definition_id or (not utils.is_valid_type_id(definition_id)) or (
+                not utils.is_valid_optional_id(version_id)):
                 raise aiohttp.web.HTTPBadRequest()
-                
-            response = db_connector.activate_process_definition(process_definition_id, process_version_id)
+            response = db_connector.activate_process_definition(definition_id, version_id)
             if not response:
                 raise aiohttp.web.HTTPServerError()
             data = json.dumps(response, sort_keys=True, default=str)
@@ -108,10 +103,10 @@ class ProcessDefinition:
     async def deactivate_process_definition(self, request):
         try:
             payload = await request.json()
-            process_definition_id = payload.get('process_definition_id')
-            if not process_definition_id or (not utils.is_valid_type_id(process_definition_id)):
+            id = payload.get('id')
+            if not id or (not utils.is_valid_type_id(id)):
                 raise aiohttp.web.HTTPBadRequest()
-            response = db_connector.deactivate_process_definition(process_definition_id)
+            response = db_connector.deactivate_process_definition(id)
             if not response:
                 raise aiohttp.web.HTTPServerError()
             data = json.dumps(response, sort_keys=True, default=str)
@@ -129,12 +124,12 @@ class ProcessDefinition:
     async def change_process_definition_info(self, request):
         try:
             payload = await request.json()
-            process_definition_id = payload.get('process_definition_id')
-            process_definition_name = payload.get('process_definition_name')
-            process_filename = payload.get('file_name')
-            if not process_definition_id:
+            id = payload.get('id')
+            name = payload.get('name')
+            filename = payload.get('filename')
+            if not id:
                 raise aiohttp.web.HTTPBadRequest()
-            response = db_connector.change_process_definition_info(process_definition_id, process_definition_name, process_filename)
+            response = db_connector.change_process_definition_info(id, name, filename)
             if not response:
                 raise aiohttp.web.HTTPServerError()
             data = json.dumps(response, sort_keys=True, default=str)
@@ -152,10 +147,10 @@ class ProcessDefinition:
     async def delete_process_definition(self, request):
         try:
             payload = await request.json()
-            process_definition_id = payload.get('process_definition_id')
-            if not process_definition_id or (not utils.is_valid_type_id(process_definition_id)):
+            id = payload.get('id')
+            if not id or (not utils.is_valid_type_id(id)):
                 raise aiohttp.web.HTTPBadRequest()
-            response = db_connector.delete_process_definition(process_definition_id)
+            response = db_connector.delete_process_definition(id)
             if not response:
                 raise aiohttp.web.HTTPServerError()
             data = json.dumps(response, sort_keys=True, default=str)
@@ -181,7 +176,7 @@ class ProcessVersion:
                 raise aiohttp.web.HTTPBadRequest()
             response = db_connector.get_process_version(version_id)
             if not response:
-                raise aiohttp.web.HTTPServerError()
+                return web.json_response(status=200, data={})
             data = json.dumps(response, sort_keys=True, default=str)
         except aiohttp.web.HTTPBadRequest as err:
             traceback.print_stack(err)
@@ -194,10 +189,10 @@ class ProcessVersion:
 
     def get_process_versions(self, request):
         try:
-            process_definition_id = request.rel_url.query['process_definition_id']
-            if not process_definition_id or (not utils.is_valid_type_id(process_definition_id)):
+            definition_id = request.rel_url.query['id']
+            if not definition_id or (not utils.is_valid_type_id(definition_id)):
                 raise aiohttp.web.HTTPBadRequest()
-            response = db_connector.get_process_versions(process_definition_id)
+            response = db_connector.get_process_versions(definition_id)
             if not response:
                 raise aiohttp.web.HTTPServerError()
             data = json.dumps(response, sort_keys=True, default=str)
@@ -231,12 +226,12 @@ class ProcessVersion:
     async def activate_process_version(self, request):
         try:
             payload = await request.json()
-            process_definition_id = payload.get('process_definition_id')
-            process_version_id = payload.get('process_version_id')
-            if not process_definition_id or (not utils.is_valid_type_id(process_definition_id)) or (
-                not utils.is_valid_optional_id(process_version_id)):
+            definition_id = payload.get('definition_id')
+            version_id = payload.get('version_id')
+            if not definition_id or (not utils.is_valid_type_id(definition_id)) or (
+                not utils.is_valid_optional_id(version_id)):
                 raise aiohttp.web.HTTPBadRequest()
-            response = db_connector.activate_process_version(process_definition_id, process_version_id)
+            response = db_connector.activate_process_version(definition_id, version_id)
             if not response:
                 raise aiohttp.web.HTTPServerError()
             data = json.dumps(response, sort_keys=True, default=str)
@@ -254,12 +249,12 @@ class ProcessVersion:
     async def deactivate_process_version(self, request):
         try:
             payload = await request.json()
-            process_definition_id = payload.get('process_definition_id')
-            process_version_id = payload.get('process_version_id')
-            if not process_definition_id or (not utils.is_valid_type_id(process_definition_id)) or (
-                not utils.is_valid_optional_id(process_version_id)):
+            definition_id = payload.get('definition_id')
+            version_id = payload.get('version_id')
+            if not definition_id or (not utils.is_valid_type_id(definition_id)) or (
+                not utils.is_valid_optional_id(version_id)):
                 raise aiohttp.web.HTTPBadRequest()
-            response = db_connector.deactivate_process_version(process_definition_id, process_version_id)
+            response = db_connector.deactivate_process_version(definition_id, version_id)
             if not response:
                 raise aiohttp.web.HTTPServerError()
             data = json.dumps(response, sort_keys=True, default=str)
@@ -277,12 +272,12 @@ class ProcessVersion:
     async def change_process_version_info(self, request):
         try:
             payload = await request.json()
-            process_version_id = payload.get('process_version_id')
-            process_version_name = payload.get('process_version_name')
-            process_filename = payload.get('filename')
-            if not process_version_id:
+            id = payload.get('id')
+            name = payload.get('name')
+            filename = payload.get('filename')
+            if not id:
                 raise aiohttp.web.HTTPBadRequest()
-            response = db_connector.change_process_version_info(process_version_id, process_version_name, process_filename)
+            response = db_connector.change_process_version_info(id, name, filename)
             if not response:
                 raise aiohttp.web.HTTPServerError()
             data = json.dumps(response, sort_keys=True, default=str)
@@ -300,10 +295,10 @@ class ProcessVersion:
     async def delete_process_version(self, request):
         try:
             payload = await request.json()
-            process_version_id = payload.get('process_version_id')
-            if not process_version_id or (not utils.is_valid_type_id(process_version_id)):
+            id = payload.get('id')
+            if not id or (not utils.is_valid_type_id(id)):
                 raise aiohttp.web.HTTPBadRequest()
-            response = db_connector.delete_process_version(process_version_id)
+            response = db_connector.delete_process_version(id)
             if not response:
                 raise aiohttp.web.HTTPServerError()
             data = json.dumps(response, sort_keys=True, default=str)
@@ -443,7 +438,7 @@ class WebService:
         else:
             return web.json_response(status=200, data=data)
 
-    async def fetch(self, session, address):
+    async def fetch_status(self, session, address):
         try:
             async with session.get(address + '/status') as response:
                 status = True if response.status == 200 else False
@@ -463,33 +458,130 @@ class WebService:
                 service = services
                 ids.append(service.get('id'))
                 address = service.get('address')
-                statuses.append(web_service.fetch(session, address))
+                statuses.append(web_service.fetch_status(session, address))
             elif isinstance(services, list):
                 for service in services:
                     ids.append(service.get('id'))
                     address = service.get('address')
-                    statuses.append(web_service.fetch(session, address))
+                    statuses.append(web_service.fetch_status(session, address))
             resolved_statuses = await asyncio.gather(*statuses, return_exceptions=True)
         return dict(zip(ids, resolved_statuses))
-            
-# @routes.get("/service/status")
-# async def get_service_status(request):
-#     services = db_connector.get_services()
-#     services_hp, service_names = [], []
-#     async with aiohttp.ClientSession() as session:
-#         for service in services:
-#             service_names.append(service.name)
-#             services_hp.append(fetch(session, service.url))
-#         service_statuses = await asyncio.gather(*services_hp, return_exceptions=True)
-#         print(service_statuses)
-#     return aiohttp.web.json_response(dict(zip(service_names, service_statuses)))
 
+    async def fetch_meta(self, address):
+            try:
+                async with aiohttp.ClientSession() as session:
+                    async with session.get(address + '/meta') as response:
+                        print(response.status)
+                        data = await response.json()
+            except aiohttp.ClientConnectionError as err:
+                data = []
+            except aiohttp.InvalidURL as err:
+                data = []
+            return data
 
+    async def get_service_meta(self, request):
+        try:
+            address = request.rel_url.query['address']
+            if not address:
+                raise aiohttp.web.HTTPBadRequest()
+            web_service = WebService()
+            response = await web_service.fetch_meta(address)
+            data = json.dumps(response, sort_keys=True, default=str)
+        except aiohttp.web.HTTPBadRequest as err:
+            return web.json_response(status=400, data=[])
+        except aiohttp.web.HTTPServerError as err:
+            return web.json_response(status=500, data=[])
+        else:
+            return web.json_response(status=200, data=data)
 
-    def get_service_meta(self, request):
+class Other():
+    def __init__(self):
         pass
 
+    async def handle_instance_info(request):
+        instance_id = request.match_info.get("instance_id")
+        m = get_model_for_instance(instance_id)
+        if not m:
+            raise aiohttp.aiohttp.web.HTTPNotFound
+        instance = m.instances[instance_id].to_json()
+        return aiohttp.web.json_response(instance)
 
+    async def handle_task_info(request):
+        instance_id = request.match_info.get("instance_id")
+        task_id = request.match_info.get("task_id")
+        m = get_model_for_instance(instance_id)
+        if not m:
+            raise aiohttp.aiohttp.web.HTTPNotFound
+        instance = m.instances[instance_id]
+        task = instance.model.elements[task_id]
+        return aiohttp.web.json_response(task.get_info())
+
+    async def search_instance(request):
+        params = request.rel_url.query
+        queries = []
+        try:
+            strip_lower = lambda x: x.strip().lower()
+            check_colon = lambda x: x if ":" in x else f":{x}"
+            queries = list(tuple(map(strip_lower, check_colon(q).split(":")))for q in params["q"].split(","))
+        except:
+            return aiohttp.web.json_response({"error": "invalid_query"}, status=400)
+
+        result_ids = []
+        ## FAKE
+        models = {}
+        for (att, value) in queries:
+            ids = []
+            for m in models.values():
+                for _id, instance in m.instances.items():
+                    search_atts = []
+                    if not att:
+                        search_atts = list(instance.variables.keys())
+                    else:
+                        for key in instance.variables.keys():
+                            if not att or att in key.lower():
+                                search_atts.append(key)
+                    search_atts = filter(
+                        lambda x: isinstance(instance.variables[x], str), search_atts
+                    )
+                    for search_att in search_atts:
+                        if search_att and value in instance.variables[search_att].lower():
+                            # data.append(instance.to_json())
+                            ids.append(_id)
+            result_ids.append(set(ids))
+        ids = reduce(lambda a, x: a.intersection(x), result_ids[:-1], result_ids[0])
+        data = []
+        for _id in ids:
+            data.append(get_model_for_instance(_id).instances[_id].to_json())
+        return aiohttp.web.json_response({"status": "ok", "results": data})
+
+    async def handle_form(request):
+        post = await request.json()
+        instance_id = request.match_info.get("instance_id")
+        task_id = request.match_info.get("task_id")
+        m = get_model_for_instance(instance_id)
+        m.instances[instance_id].in_queue.put_nowait(UserFormMessage(task_id, post))
+        return aiohttp.web.json_response({"status": "OK"})
+    
+    async def get_models(request):
+        models = {}
+        data = [m.to_json() for m in models.values()]
+        return aiohttp.web.json_response({
+                "status": "ok", 
+                "results": data
+            })
+
+    async def handle_new_instance(request):
+        _id = str(uuid4())
+        model = request.match_info.get("model_name")
+        instance = await app["bpmn_models"][model].create_instance(_id, {})
+        asyncio.create_task(instance.run())
+        return aiohttp.web.json_response({"id": _id})
+
+    async def get_model(request):
+        model_name = request.match_info.get("model_name")
+        return aiohttp.web.FileResponse(
+            path=os.path.join("models", app["bpmn_models"][model_name].model_path)
+        )
 
 if __name__ == '__main__':
     logging.basicConfig(level=logging.DEBUG)
@@ -497,6 +589,7 @@ if __name__ == '__main__':
     process_definition = ProcessDefinition()
     process_version = ProcessVersion()
     web_service = WebService()
+    other = Other()
     app.add_routes(
         [
             web.get('/process-definition', process_definition.get_process_definitions),
@@ -519,8 +612,16 @@ if __name__ == '__main__':
             web.delete('/web-service', web_service.delete_service),
             web.patch('/web-service', web_service.update_service),
             web.patch('/web-service/{id}', web_service.change_status),
-            web.get('/web-service/meta', web_service.get_service_meta),
             web.get('/web-service/status', web_service.get_service_status),
+            web.get('/service/meta', web_service.get_service_meta),
+            #other
+            web.get('/model', other.get_models),
+            web.post('/model/{model_name}/instance', other.handle_new_instance),
+            web.get('/model/{model_name}', other.get_model),
+            web.get('/instance', other.search_instance),
+            web.get('/instance/{instance_id}', other.handle_instance_info),
+            web.get('/instance/{instance_id}/task/{task_id}', other.handle_task_info),
+            web.post('/instance/{instance_id}/task/{task_id}/form', other.handle_form),
         ]
     )
     cors = aiohttp_cors.setup(

@@ -261,6 +261,83 @@
 #     return aiohttp.web.json_response(instance)
 
 
+# class Event(DB.Entity):
+#     model_name = Required(str)
+#     instance_id = Required(str)
+#     activity_id = Required(str)
+#     timestamp = Required(datetime, precision=6)
+#     pending = Required(StrArray)
+#     activity_variables = Required(Json)
+
+# class RunningInstance(DB.Entity):
+#     running = Required(bool)
+#     instance_id = Required(str, unique=True)
+
+# class Process_Instance(DB.Entity):
+#     id = PrimaryKey(int, auto=True)
+#     key = Required(str)
+#     status = Required(str) #CHECK CONSTRAINT (FINISHED, ERROR, STARTED, SUSPENDED)
+#     created = Required(datetime, precision=6)
+#     last_modified_date = Required(datetime, precision=6)
+#     task_ids = Optional(IntArray, nullable=True)
+#     instance_variables = Optional(Json, nullable=True)
+#     process_version_id = Required(Process_Version) #FK
+
+# class Task(DB.Entity):
+#     id = PrimaryKey(int, auto=True)
+#     name = Required(str)
+#     type = Required(str)
+#     variables = Optional(Json, nullable=True)
+#     created = Required(datetime, precision=6)
+#     last_modified_date = Required(datetime, precision=6)
+#     instance_id = Required(int) #FK
+
+# @db_session
+# def add_event(model_name, instance_id, activity_id, timestamp, pending, activity_variables):
+#     Event(
+#         model_name=model_name,
+#         instance_id=instance_id,
+#         activity_id=activity_id,
+#         timestamp=timestamp,
+#         pending=pending,
+#         activity_variables=activity_variables,
+#     )
+
+# @db_session
+# def add_running_instance(instance_id):
+#     RunningInstance(instance_id=instance_id, running=True)
+
+# @db_session
+# def finish_running_instance(instance):
+#     finished_instance = RunningInstance.get(instance_id=instance)
+#     finished_instance.running = False
+
+# @db_session
+# def get_running_instances_log():
+#     log = []
+#     running_instances = RunningInstance.select(lambda ri: ri.running == True)[:]
+#     for instance in running_instances:
+#         instance_dict = {}
+#         instance_dict[instance.instance_id] = {}
+#         events = Event.select(lambda e: e.instance_id == instance.instance_id).order_by(
+#             Event.timestamp
+#         )[:]
+#         events_list = []
+#         for event in events:
+#             model_path = event.model_name
+#             event_dict = {}
+#             event_dict["activity_id"] = event.activity_id
+#             event_dict["pending"] = event.pending
+#             event_dict["activity_variables"] = event.activity_variables
+#             events_list.append(event_dict)
+
+#         instance_dict[instance.instance_id]["model_path"] = model_path
+#         instance_dict[instance.instance_id]["events"] = events_list
+#         log.append(instance_dict)
+
+#     return log
+
+
 # app = None
 
 
