@@ -260,7 +260,7 @@ def change_process_version_info(version_id, version_name, version_filename):
     version = ProcessVersion.get_for_update(lambda pv: pv.id == version_id)
     definition = None
     if version.is_active == True:
-        definition = version.process_definition
+        definition = version.definition
         definition = ProcessDefinition.get_for_update(lambda pd: pd.id == definition.id)
         definition.active_version_name = version_name
         definition.last_modified_date = datetime.now()
